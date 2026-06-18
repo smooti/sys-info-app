@@ -35,7 +35,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Compile cross-platform binaries and attach them to the release
-build-assets:
+  build-assets:
     name: Build & Upload Assets
     needs: release-tag
     if: needs['release-tag'].outputs.new_release_published == 'true'
