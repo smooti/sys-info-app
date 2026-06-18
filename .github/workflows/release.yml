@@ -1,0 +1,90 @@
+name: Automated Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Determine the next semantic version and create the GitHub Release container
+  release-tag:
+    name: Semantic Release Tagging
+    runs-on: ubuntu-latest
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Compile cross-platform binaries and attach them to the release
+  build-assets:
+    name: Build & Upload Assets
+    needs: release-tag
+    if: needs:release-tag.outputs.new_release_published == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [windows, linux]
+        goarch: [amd64]
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22' # Update to your target Go runtime version
+
+      - name: Resolve Dependencies
+        run: go mod download
+
+      - name: Compile Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          # Define appropriate file name variations for Windows vs Linux
+          BINARY_NAME="sysinfo"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="sysinfo.exe"
+          fi
+          
+          # Build the production executable using compiler optimizations
+          go build -ldflags="-s -w" -o ./build/$BINARY_NAME ./cmd/sysinfo
+
+      - name: Compress & Archive Executable
+        run: |
+          cd build
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip sysinfo-${{ needs:release-tag.outputs.new_release_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip sysinfo.exe
+          else
+            tar -czvf sysinfo-${{ needs:release-tag.outputs.new_release_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz sysinfo
+          fi
+
+      - name: Upload Binaries to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/sysinfo-${{ needs:release-tag.outputs.new_release_version }}-*
+          file_glob: true
+          tag: v${{ needs:release-tag.outputs.new_release_version }}
+          overwrite: true
