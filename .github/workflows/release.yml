@@ -35,10 +35,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Compile cross-platform binaries and attach them to the release
-  build-assets:
+build-assets:
     name: Build & Upload Assets
     needs: release-tag
-    if: needs:release-tag.outputs.new_release_published == 'true'
+    if: needs['release-tag'].outputs.new_release_published == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -52,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22' # Update to your target Go runtime version
+          go-version: '1.22'
 
       - name: Resolve Dependencies
         run: go mod download
@@ -62,29 +62,30 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          # Define appropriate file name variations for Windows vs Linux
           BINARY_NAME="sysinfo"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="sysinfo.exe"
           fi
           
-          # Build the production executable using compiler optimizations
           go build -ldflags="-s -w" -o ./build/$BINARY_NAME ./cmd/sysinfo
 
       - name: Compress & Archive Executable
         run: |
           cd build
+          # Using bracket notation to safely handle the hyphenated job name
+          VERSION="${{ needs['release-tag'].outputs.new_release_version }}"
+          
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip sysinfo-${{ needs:release-tag.outputs.new_release_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip sysinfo.exe
+            zip sysinfo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.zip sysinfo.exe
           else
-            tar -czvf sysinfo-${{ needs:release-tag.outputs.new_release_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz sysinfo
+            tar -czvf sysinfo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz sysinfo
           fi
 
       - name: Upload Binaries to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/sysinfo-${{ needs:release-tag.outputs.new_release_version }}-*
+          file: build/sysinfo-${{ needs['release-tag'].outputs.new_release_version }}-*
           file_glob: true
-          tag: v${{ needs:release-tag.outputs.new_release_version }}
+          tag: v${{ needs['release-tag'].outputs.new_release_version }}
           overwrite: true
